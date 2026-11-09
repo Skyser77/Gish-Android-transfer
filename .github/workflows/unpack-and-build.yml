@@ -19,7 +19,8 @@ jobs:
       - name: Unpack Gish-Android-port.zip
         run: |
           if [ -f "Gish-Android-port.zip" ]; then
-            unzip -q Gish-Android-port.zip -d .
+            echo "Extracting ZIP archive..."
+            unzip -o -q Gish-Android-port.zip -d .
             echo "Successfully unpacked Gish-Android-port.zip"
           else
             echo "ZIP file not found!"
