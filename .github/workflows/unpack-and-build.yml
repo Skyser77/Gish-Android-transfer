@@ -27,6 +27,14 @@ jobs:
             exit 1
           fi
 
+      - name: Remove local custom aapt2 override
+        run: |
+          # Убираем жесткую привязку к локальному пути /workspace/bin/aapt2 из конфигурации
+          cd extracted_project
+          if [ -f "gradle.properties" ]; then
+            sed -i '/aapt2FromMavenOverride/d' gradle.properties
+          fi
+
       - name: Build Android APK with Gradle
         run: |
           cd extracted_project
