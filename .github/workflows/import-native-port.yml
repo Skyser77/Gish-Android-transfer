@@ -1,55 +1,81 @@
 
-name: Import native Android port and build APK
+name: Import native Gish port and build APK
 
 on:
   push:
     branches:
-      - android-port-source
+      - main
     paths:
       - .github/workflows/import-native-port.yml
+      - Gish-Android-port.zip
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   import-and-build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout source
+      - name: Checkout transfer repository
         uses: actions/checkout@v4
         with:
+          path: transfer
+
+      - name: Checkout main Gish repository
+        uses: actions/checkout@v4
+        with:
+          repository: Skyser77/Gish-Android
           ref: android-port-source
+          path: source-repo
+          token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
 
-      - name: Download and unpack project
+      - name: Extract Android project
         shell: bash
         run: |
           set -euo pipefail
-          ARCHIVE="$RUNNER_TEMP/Gish-Android-port.zip"
-          curl -fL --retry 3 \
-            "https://raw.githubusercontent.com/Skyser77/Gish-Android-transfer/main/Gish-Android-port.zip" \
-            -o "$ARCHIVE"
+
+          ARCHIVE="transfer/Gish-Android-port.zip"
+
+          if [ ! -f "$ARCHIVE" ]; then
+            echo "::error::Gish-Android-port.zip not found in transfer repository"
+            find transfer -maxdepth 3 -type f
+            exit 1
+          fi
+
           unzip -t "$ARCHIVE"
           mkdir -p "$RUNNER_TEMP/unpack"
           unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/unpack"
 
           SETTINGS="$(find "$RUNNER_TEMP/unpack" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
+
           if [ -z "$SETTINGS" ]; then
-            echo "::error::Gradle project not found in ZIP"
-            unzip -Z1 "$ARCHIVE" | head -200
+            echo "::error::Gradle settings file not found in ZIP"
+            find "$RUNNER_TEMP/unpack" -maxdepth 4 -type f | head -200
             exit 1
           fi
 
-          ROOT="$(dirname "$SETTINGS")"
-          mkdir -p "$RUNNER_TEMP/imported-project"
-          cp -a "$ROOT/." "$RUNNER_TEMP/imported-project/"
-          test -f "$RUNNER_TEMP/imported-project/app/build.gradle" || \
-            test -f "$RUNNER_TEMP/imported-project/app/build.gradle.kts"
+          PROJECT_ROOT="$(dirname "$SETTINGS")"
 
-      - name: Publish project branch
+          if [ ! -d "$PROJECT_ROOT/app" ]; then
+            echo "::error::Android app directory not found"
+            exit 1
+          fi
+
+          mkdir -p source-repo/native-android-port
+          cp -a "$PROJECT_ROOT/." source-repo/native-android-port/
+
+          echo "Imported project files:"
+          find source-repo/native-android-port -maxdepth 3 -type f | head -100
+
+      - name: Publish native Android branch
+        working-directory: source-repo
+        shell: bash
         run: |
           set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -60,16 +86,14 @@ jobs:
             git checkout -b native-android-port
           fi
 
-          mkdir -p native-android-port
-          cp -a "$RUNNER_TEMP/imported-project/." native-android-port/
           git add native-android-port
 
-          if ! git diff --cached --quiet; then
+          if git diff --cached --quiet; then
+            echo "No changes to publish"
+          else
             git commit -m "Import complete native Android port source and assets"
             git push origin native-android-port
           fi
-        env:
-          GH_TOKEN: ${{ github.token }}
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -86,11 +110,22 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build APK
-        run: gradle -p native-android-port assembleDebug --stacktrace
+        working-directory: source-repo/native-android-port
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew assembleDebug --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Gish-Android-debug-apk
-          path: native-android-port/app/build/outputs/apk/debug/*.apk
+          path: source-repo/native-android-port/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
