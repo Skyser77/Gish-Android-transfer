@@ -1,0 +1,96 @@
+
+name: Import native Android port and build APK
+
+on:
+  push:
+    branches:
+      - android-port-source
+    paths:
+      - .github/workflows/import-native-port.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: android-port-source
+          fetch-depth: 0
+
+      - name: Download and unpack project
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/Gish-Android-port.zip"
+          curl -fL --retry 3 \
+            "https://raw.githubusercontent.com/Skyser77/Gish-Android-transfer/main/Gish-Android-port.zip" \
+            -o "$ARCHIVE"
+          unzip -t "$ARCHIVE"
+          mkdir -p "$RUNNER_TEMP/unpack"
+          unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/unpack"
+
+          SETTINGS="$(find "$RUNNER_TEMP/unpack" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
+          if [ -z "$SETTINGS" ]; then
+            echo "::error::Gradle project not found in ZIP"
+            unzip -Z1 "$ARCHIVE" | head -200
+            exit 1
+          fi
+
+          ROOT="$(dirname "$SETTINGS")"
+          mkdir -p "$RUNNER_TEMP/imported-project"
+          cp -a "$ROOT/." "$RUNNER_TEMP/imported-project/"
+          test -f "$RUNNER_TEMP/imported-project/app/build.gradle" || \
+            test -f "$RUNNER_TEMP/imported-project/app/build.gradle.kts"
+
+      - name: Publish project branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin native-android-port >/dev/null 2>&1; then
+            git fetch origin native-android-port
+            git checkout -B native-android-port FETCH_HEAD
+          else
+            git checkout -b native-android-port
+          fi
+
+          mkdir -p native-android-port
+          cp -a "$RUNNER_TEMP/imported-project/." native-android-port/
+          git add native-android-port
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Import complete native Android port source and assets"
+            git push origin native-android-port
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build APK
+        run: gradle -p native-android-port assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gish-Android-debug-apk
+          path: native-android-port/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
