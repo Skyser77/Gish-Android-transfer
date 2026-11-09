@@ -1,12 +1,17 @@
 
-name: Build Gish APK
+name: Build Gish Android APK
 
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
       - '*.zip'
       - '.github/workflows/build-apk.yml'
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -22,30 +27,47 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
+      - name: Prepare Android SDK
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Extract project
+        shell: bash
         run: |
-          set -e
-          ZIP=$(find . -maxdepth 1 -name '*.zip' -print -quit)
-          test -n "$ZIP"
-          mkdir -p project
-          unzip -q "$ZIP" -d project
+          set -euo pipefail
+
+          ZIP="$(find . -maxdepth 1 -type f -iname '*.zip' -print -quit)"
+          if [ -z "$ZIP" ]; then
+            echo "::error::ZIP archive not found in repository root"
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/gish"
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/gish"
+
+          SETTINGS="$(find "$RUNNER_TEMP/gish" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
+          if [ -z "$SETTINGS" ]; then
+            echo "::error::Gradle settings file not found in ZIP"
+            find "$RUNNER_TEMP/gish" -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          PROJECT_ROOT="$(dirname "$SETTINGS")"
+          echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
+          echo "Project found: $PROJECT_ROOT"
 
       - name: Build APK
         shell: bash
         run: |
-          set -e
-          SETTINGS=$(find project -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
-          test -n "$SETTINGS"
-          ROOT=$(dirname "$SETTINGS")
-          cd "$ROOT"
+          set -euo pipefail
+          cd "$PROJECT_ROOT"
 
           if [ -f gradlew ]; then
             chmod +x gradlew
@@ -58,5 +80,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Gish-Android-APK
-          path: project/**/build/outputs/apk/debug/*.apk
+          path: |
+            ${{ env.PROJECT_ROOT }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
