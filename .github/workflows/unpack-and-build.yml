@@ -1,0 +1,39 @@
+name: Unpack and Build Gish APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Unpack Gish-Android-port.zip
+        run: |
+          if [ -f "Gish-Android-port.zip" ]; then
+            unzip -q Gish-Android-port.zip -d .
+            echo "Successfully unpacked Gish-Android-port.zip"
+          else
+            echo "ZIP file not found!"
+            exit 1
+          fi
+
+      - name: Build Android APK with Gradle
+        run: |
+          cd extracted_project
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gish-native-debug-apk
+          path: extracted_project/app/build/outputs/apk/debug/app-debug.apk
