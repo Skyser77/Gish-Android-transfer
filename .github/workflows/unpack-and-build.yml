@@ -29,7 +29,6 @@ jobs:
 
       - name: Remove local custom aapt2 override
         run: |
-          # Убираем жесткую привязку к локальному пути /workspace/bin/aapt2 из конфигурации
           cd extracted_project
           if [ -f "gradle.properties" ]; then
             sed -i '/aapt2FromMavenOverride/d' gradle.properties
@@ -38,7 +37,8 @@ jobs:
       - name: Build Android APK with Gradle
         run: |
           cd extracted_project
-          gradle wrapper --gradle-version 8.11.1
+          # Генерируем проверенную стабильную версию Gradle 8.2 вместо последней 9.x
+          gradle wrapper --gradle-version 8.2
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
