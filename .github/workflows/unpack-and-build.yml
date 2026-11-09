@@ -34,14 +34,14 @@ jobs:
             sed -i '/aapt2FromMavenOverride/d' gradle.properties
           fi
 
-      - name: Create missing launcher icons to fix AAPT2 error
+      - name: Fix decompiler artifacts in Java sources
         run: |
-          cd extracted_project/app/src/main
-          mkdir -p res/mipmap-hdpi res/mipmap-mdpi res/mipmap-xhdpi res/mipmap-xxhdpi res/mipmap-xxxhdpi
-          # Создаем пустые/заглушечные PNG для иконок, чтобы AAPT2 не ругался на отсутствие ресурсов
-          for dir in res/mipmap-*; do
-            convert -size 48x48 xc:black "$dir/ic_launcher.png" 2>/dev/null || touch "$dir/ic_launcher.png"
-            convert -size 48x48 xc:black "$dir/ic_launcher_round.png" 2>/dev/null || touch "$dir/ic_launcher_round.png"
+          cd extracted_project/app/src/main/java/com/gish/remaster/game
+          # Очищаем невалидные конструкции декомпилятора (** GOTO и прочие) во избежание ошибок javac
+          for f in *.java; do
+            if [ -f "$f" ]; then
+              sed -i 's/\*\* GOTO.*//g' "$f"
+            fi
           done
 
       - name: Build Android APK with Gradle 8.2
