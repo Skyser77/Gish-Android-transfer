@@ -34,6 +34,16 @@ jobs:
             sed -i '/aapt2FromMavenOverride/d' gradle.properties
           fi
 
+      - name: Create missing launcher icons to fix AAPT2 error
+        run: |
+          cd extracted_project/app/src/main
+          mkdir -p res/mipmap-hdpi res/mipmap-mdpi res/mipmap-xhdpi res/mipmap-xxhdpi res/mipmap-xxxhdpi
+          # Создаем пустые/заглушечные PNG для иконок, чтобы AAPT2 не ругался на отсутствие ресурсов
+          for dir in res/mipmap-*; do
+            convert -size 48x48 xc:black "$dir/ic_launcher.png" 2>/dev/null || touch "$dir/ic_launcher.png"
+            convert -size 48x48 xc:black "$dir/ic_launcher_round.png" 2>/dev/null || touch "$dir/ic_launcher_round.png"
+          done
+
       - name: Build Android APK with Gradle 8.2
         uses: gradle/actions/setup-gradle@v3
         with:
@@ -48,4 +58,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gish-native-debug-apk
-          path: extracted_project/app/
+          path: extracted_project/app/build/outputs/apk/debug/app-debug.apk
