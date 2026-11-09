@@ -1,86 +1,45 @@
 
-name: Build Gish Android APK
+name: Extract Gish source for inspection
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - '*.zip'
-      - '.github/workflows/build-apk.yml'
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  extract:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Prepare Android SDK
-        run: |
-          set -e
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Extract project
+      - name: Extract ZIP
         shell: bash
         run: |
           set -euo pipefail
-          ZIP="$(find . -maxdepth 1 -type f -iname '*.zip' -print -quit)"
+
+          ZIP="$(find . -maxdepth 1 -name '*.zip' -print -quit)"
           test -n "$ZIP"
-          mkdir -p "$RUNNER_TEMP/gish"
-          unzip -q "$ZIP" -d "$RUNNER_TEMP/gish"
-          SETTINGS="$(find "$RUNNER_TEMP/gish" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
+
+          mkdir -p extracted
+          unzip -q "$ZIP" -d extracted
+
+          SETTINGS="$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
           test -n "$SETTINGS"
-          echo "PROJECT_ROOT=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
 
-      - name: Build APK with full log
-        id: build
-        continue-on-error: true
-        shell: bash
-        run: |
-          cd "$PROJECT_ROOT"
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew assembleDebug --stacktrace --info --console=plain > "$RUNNER_TEMP/gradle-full.log" 2>&1
-          else
-            gradle assembleDebug --stacktrace --info --console=plain > "$RUNNER_TEMP/gradle-full.log" 2>&1
-          fi
-          RESULT=$?
-          cat "$RUNNER_TEMP/gradle-full.log"
-          exit "$RESULT"
+          ROOT="$(dirname "$SETTINGS")"
+          echo "PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
 
-      - name: Upload full Gradle log
-        if: always()
+          echo "Project root: $ROOT"
+          echo "Java files: $(find "$ROOT" -name '*.java' | wc -l)"
+          echo "All files: $(find "$ROOT" -type f | wc -l)"
+
+      - name: Upload extracted source
         uses: actions/upload-artifact@v4
         with:
-          name: Gish-Gradle-full-log
-          path: ${{ runner.temp }}/gradle-full.log
-          if-no-files-found: warn
-
-      - name: Upload APK
-        if: steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gish-Android-APK
-          path: ${{ env.PROJECT_ROOT }}/app/build/outputs/apk/debug/*.apk
+          name: Gish-extracted-source
+          path: ${{ env.PROJECT_ROOT }}
           if-no-files-found: error
-
-      - name: Fail if build failed
-        if: steps.build.outcome != 'success'
-        run: exit 1
-
+          retention-days: 3
