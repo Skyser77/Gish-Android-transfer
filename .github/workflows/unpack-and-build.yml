@@ -30,6 +30,7 @@ jobs:
       - name: Build Android APK with Gradle
         run: |
           cd extracted_project
+          gradle wrapper --gradle-version 8.11.1
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
